@@ -46,7 +46,9 @@
 ;; to access to the lexical scope of the local frame.
 
 (ns alex-and-georges.debug-repl
-  [:require clojure.main])
+  (:require [clojure.main]
+            [seesaw.core :as see]
+            [clojure.pprint]))
 
 (defmacro local-bindings
   "Produces a map of the names of local bindings to their values."
@@ -102,30 +104,56 @@ values."
     (= (.getCause exc) exit-dr-exception) (throw exit-dr-exception)
     :else (clojure.main/repl-caught exc)))
 
+(def xit (promise))
+
+(def frm (see/frame :title "Get to know Seesaw"
+                    :on-close :dispose
+                    :listen [:window-closed (fn [e] (deliver xit "exited."))]))
+
 (defmacro debug-repl
   "Starts a REPL with the local bindings available."
   ([]
      `(debug-repl nil))
   ([form]
      `(let [counter# (inc-counter)
-            eval-fn# (partial eval-with-locals (local-bindings))]
-        (try
-         (binding [level (inc level)]
-           (clojure.main/repl
-            :prompt #(print (str "dr-" level "-" counter# " => "))
-            :eval eval-fn#
-            :read dr-read
-            :caught caught))
-         (catch Exception e#
-           (cond
-             (= e# quit-dr-exception)
-             (if-let [new-form# (.nextElement quit-dr-exception)]
-               (eval-fn# new-form#)
-               (eval-fn# ~form))
-             (= e# exit-dr-exception)
-             (when (> level -1)
-               (throw exit-dr-exception))
-             :else (throw e#)))))))
+            eval-fn# (partial eval-with-locals (local-bindings))
+            sorted-locals# (sort-by key (local-bindings))]
+        (do
+          (see/native!)
+          (-> frm #_see/pack! see/show!)
+          (see/config! frm :content (see/flow-panel
+                                     :align :left
+                                     :hgap 20
+                                     :items [(see/button :text "show locals"
+                                                         :mnemonic \N
+                                                         :listen [:action (fn [e#] (see/alert (str sorted-locals#)))])]))
+                                        ;(with-out-str 
+                                        ;(clojure.pprint/pprint 
+                                        ;(sort-by key (into {} (for [[k# v#] (local-bindings)] {(str k#) v#}))))))
+                                        ;(sort-by key (local-bindings))))
+
+          (see/config! frm :size [300 :by 300])
+          @xit
+          (def xit (promise)))
+
+        #_(try
+            (binding [level (inc level)]
+              (clojure.main/repl
+               :prompt #(print (str "dr-" level "-" counter# " => "))
+               :eval eval-fn#
+               :read dr-read
+               :caught caught))
+            (catch Exception e#
+              (cond
+               (= e# quit-dr-exception)
+               (if-let [new-form# (.nextElement quit-dr-exception)]
+                 (eval-fn# new-form#)
+                 (eval-fn# ~form))
+               (= e# exit-dr-exception)
+               (when (> level -1)
+                 (throw exit-dr-exception))
+               :else (throw e#))))
+        )))
 
 
 (comment
